@@ -3,6 +3,7 @@
 #include "Mode.hpp"
 #include "GL.hpp"
 
+#include <cmath>
 #include <vector>
 #include <deque>
 

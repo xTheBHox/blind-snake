@@ -34,14 +34,14 @@ if $(OS) = NT { #Windows
 		-std=c++14 -g -Wall -Werror
 		`'$(NEST_LIBS)/SDL2/bin/sdl2-config' --prefix='$(NEST_LIBS)/SDL2' --cflags` #SDL2
 		-I$(NEST_LIBS)/glm/include                                                  #glm
-		-I$(NEST_LIBS)/libpng/include     
+		-I$(NEST_LIBS)/libpng/include
 		;
 	LINK = clang++ ;
 	LINKFLAGS = -std=c++14 -g -Wall -Werror ;
 	LINKLIBS =
 		`'$(NEST_LIBS)/SDL2/bin/sdl2-config' --prefix='$(NEST_LIBS)/SDL2' --static-libs` -framework OpenGL #SDL2
 		-L$(NEST_LIBS)/libpng/lib -lpng                                                       #libpng
-		-L$(NEST_LIBS)/zlib/lib -lz  
+		-L$(NEST_LIBS)/zlib/lib -lz
 		;
 	File README-SDL.txt : $(NEST_LIBS)/SDL2/dist/README-SDL.txt ;
 	MakeLocate README-SDL.txt : dist ;
@@ -84,4 +84,4 @@ LOCATE_TARGET = objs ; #put objects in 'objs' directory
 Objects $(GAME_NAMES:S=.cpp) ;
 
 LOCATE_TARGET = dist ; #put main in 'dist' directory
-MainFromObjects pong : $(GAME_NAMES:S=$(SUFOBJ)) ;
+MainFromObjects bsnake : $(GAME_NAMES:S=$(SUFOBJ)) ;

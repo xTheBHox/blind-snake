@@ -15,7 +15,7 @@ PongMode::PongMode() {
 	ball_trail.emplace_back(ball, trail_length);
 	ball_trail.emplace_back(ball, 0.0f);
 
-	
+
 	//----- allocate OpenGL resources -----
 	{ //vertex buffer:
 		glGenBuffers(1, &vertex_buffer);
@@ -334,7 +334,7 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 	//paddles:
 	draw_rectangle(left_paddle, paddle_radius, fg_color);
 	draw_rectangle(right_paddle, paddle_radius, fg_color);
-	
+
 
 	//ball:
 	draw_rectangle(ball, ball_radius, fg_color);
@@ -432,7 +432,7 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 
 	//reset current program to none:
 	glUseProgram(0);
-	
+
 
 	GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
 
