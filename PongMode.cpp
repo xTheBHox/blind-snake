@@ -8,13 +8,9 @@
 
 #include <random>
 
-PongMode::PongMode() {
+SnakeMode::SnakeMode() {
 
-	//set up trail as if ball has been here for 'forever':
-	ball_trail.clear();
-	ball_trail.emplace_back(ball, trail_length);
-	ball_trail.emplace_back(ball, 0.0f);
-
+  snake_body.emplace_back(snake_pos, 0.0f);
 
 	//----- allocate OpenGL resources -----
 	{ //vertex buffer:
@@ -34,7 +30,7 @@ PongMode::PongMode() {
 		//set vertex_buffer as the source of glVertexAttribPointer() commands:
 		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
 
-		//set up the vertex array object to describe arrays of PongMode::Vertex:
+		//set up the vertex array object to describe arrays of SnakeMode::Vertex:
 		glVertexAttribPointer(
 			color_texture_program.Position_vec4, //attribute
 			3, //size
@@ -104,7 +100,7 @@ PongMode::PongMode() {
 	}
 }
 
-PongMode::~PongMode() {
+SnakeMode::~SnakeMode() {
 
 	//----- free OpenGL resources -----
 	glDeleteBuffers(1, &vertex_buffer);
@@ -117,140 +113,51 @@ PongMode::~PongMode() {
 	white_tex = 0;
 }
 
-bool PongMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
+bool SnakeMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
 
-	if (evt.type == SDL_MOUSEMOTION) {
-		//convert mouse from window pixels (top-left origin, +y is down) to clip space ([-1,1]x[-1,1], +y is up):
-		glm::vec2 clip_mouse = glm::vec2(
-			(evt.motion.x + 0.5f) / window_size.x * 2.0f - 1.0f,
-			(evt.motion.y + 0.5f) / window_size.y *-2.0f + 1.0f
-		);
-		left_paddle.y = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).y;
-	}
+  if (evt.type == SDL_MOUSEMOTION) {
+    //convert mouse from window pixels (top-left origin, +y is down) to clip space ([-1,1]x[-1,1], +y is up):
+    glm::vec2 clip_mouse = glm::vec2(
+      (evt.motion.x + 0.5f) / window_size.x * 2.0f - 1.0f,
+      (evt.motion.y + 0.5f) / window_size.y *-2.0f + 1.0f
+    );
 
-	return false;
+    if (clip_mouse.x != 0.0f && clip_mouse.y != 0.0f) {
+      float scaling = snake_speed / std::sqrt(clip_mouse.y * clip_mouse.y + clip_mouse.x * clip_mouse.x);
+      snake_vel = clip_mouse * scaling;
+    }
+
+    return true;
+
+  }
+
+  return false;
 }
 
-void PongMode::update(float elapsed) {
+void SnakeMode::update(float elapsed) {
 
-	static std::mt19937 mt; //mersenne twister pseudo-random number generator
+  snake_pos_prev = snake_pos;
 
-	//----- paddle update -----
+  snake_pos += snake_vel * elapsed;
 
-	{ //right player ai:
-		ai_offset_update -= elapsed;
-		if (ai_offset_update < elapsed) {
-			//update again in [0.5,1.0) seconds:
-			ai_offset_update = (mt() / float(mt.max())) * 0.5f + 0.5f;
-			ai_offset = (mt() / float(mt.max())) * 2.5f - 1.25f;
-		}
-		if (right_paddle.y < ball.y + ai_offset) {
-			right_paddle.y = std::min(ball.y + ai_offset, right_paddle.y + 2.0f * elapsed);
-		} else {
-			right_paddle.y = std::max(ball.y + ai_offset, right_paddle.y - 2.0f * elapsed);
-		}
-	}
+  for (auto &s : snake_body) {
+    s.z += elapsed;
+  }
 
-	//clamp paddles to court:
-	right_paddle.y = std::max(right_paddle.y, -court_radius.y + paddle_radius.y);
-	right_paddle.y = std::min(right_paddle.y,  court_radius.y - paddle_radius.y);
 
-	left_paddle.y = std::max(left_paddle.y, -court_radius.y + paddle_radius.y);
-	left_paddle.y = std::min(left_paddle.y,  court_radius.y - paddle_radius.y);
+  if (!snake_body.empty() && snake_body.back().z > snake_body_interval) {
+    float scale_front = (snake_body.back().z - snake_body_interval) / elapsed;
+    float scale_back = 1.0f - scale_front;
+    snake_body.emplace_back(snake_pos * scale_back + snake_pos_prev * scale_front, scale_front);
+  }
 
-	//----- ball update -----
+  while (!snake_body.empty() && snake_body.front().z > snake_len) {
+    snake_body.pop_front();
+  }
 
-	//speed of ball doubles every four points:
-	float speed_multiplier = 4.0f * std::pow(2.0f, (left_score + right_score) / 4.0f);
-
-	//velocity cap, though (otherwise ball can pass through paddles):
-	speed_multiplier = std::min(speed_multiplier, 10.0f);
-
-	ball += elapsed * speed_multiplier * ball_velocity;
-
-	//---- collision handling ----
-
-	//paddles:
-	auto paddle_vs_ball = [this](glm::vec2 const &paddle) {
-		//compute area of overlap:
-		glm::vec2 min = glm::max(paddle - paddle_radius, ball - ball_radius);
-		glm::vec2 max = glm::min(paddle + paddle_radius, ball + ball_radius);
-
-		//if no overlap, no collision:
-		if (min.x > max.x || min.y > max.y) return;
-
-		if (max.x - min.x > max.y - min.y) {
-			//wider overlap in x => bounce in y direction:
-			if (ball.y > paddle.y) {
-				ball.y = paddle.y + paddle_radius.y + ball_radius.y;
-				ball_velocity.y = std::abs(ball_velocity.y);
-			} else {
-				ball.y = paddle.y - paddle_radius.y - ball_radius.y;
-				ball_velocity.y = -std::abs(ball_velocity.y);
-			}
-		} else {
-			//wider overlap in y => bounce in x direction:
-			if (ball.x > paddle.x) {
-				ball.x = paddle.x + paddle_radius.x + ball_radius.x;
-				ball_velocity.x = std::abs(ball_velocity.x);
-			} else {
-				ball.x = paddle.x - paddle_radius.x - ball_radius.x;
-				ball_velocity.x = -std::abs(ball_velocity.x);
-			}
-			//warp y velocity based on offset from paddle center:
-			float vel = (ball.y - paddle.y) / (paddle_radius.y + ball_radius.y);
-			ball_velocity.y = glm::mix(ball_velocity.y, vel, 0.75f);
-		}
-	};
-	paddle_vs_ball(left_paddle);
-	paddle_vs_ball(right_paddle);
-
-	//court walls:
-	if (ball.y > court_radius.y - ball_radius.y) {
-		ball.y = court_radius.y - ball_radius.y;
-		if (ball_velocity.y > 0.0f) {
-			ball_velocity.y = -ball_velocity.y;
-		}
-	}
-	if (ball.y < -court_radius.y + ball_radius.y) {
-		ball.y = -court_radius.y + ball_radius.y;
-		if (ball_velocity.y < 0.0f) {
-			ball_velocity.y = -ball_velocity.y;
-		}
-	}
-
-	if (ball.x > court_radius.x - ball_radius.x) {
-		ball.x = court_radius.x - ball_radius.x;
-		if (ball_velocity.x > 0.0f) {
-			ball_velocity.x = -ball_velocity.x;
-			left_score += 1;
-		}
-	}
-	if (ball.x < -court_radius.x + ball_radius.x) {
-		ball.x = -court_radius.x + ball_radius.x;
-		if (ball_velocity.x < 0.0f) {
-			ball_velocity.x = -ball_velocity.x;
-			right_score += 1;
-		}
-	}
-
-	//----- rainbow trails -----
-
-	//age up all locations in ball trail:
-	for (auto &t : ball_trail) {
-		t.z += elapsed;
-	}
-	//store fresh location at back of ball trail:
-	ball_trail.emplace_back(ball, 0.0f);
-
-	//trim any too-old locations from back of trail:
-	//NOTE: since trail drawing interpolates between points, only removes back element if second-to-back element is too old:
-	while (ball_trail.size() >= 2 && ball_trail[1].z > trail_length) {
-		ball_trail.pop_front();
-	}
 }
 
-void PongMode::draw(glm::uvec2 const &drawable_size) {
+void SnakeMode::draw(glm::uvec2 const &drawable_size) {
 	//some nice colors from the course web page:
 	#define HEX_TO_U8VEC4( HX ) (glm::u8vec4( (HX >> 24) & 0xff, (HX >> 16) & 0xff, (HX >> 8) & 0xff, (HX) & 0xff ))
 	const glm::u8vec4 bg_color = HEX_TO_U8VEC4(0xf3ffc6ff);
@@ -267,11 +174,6 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 		HEX_TO_U8VEC4(0x0098cf54)
 	};
 	#undef HEX_TO_U8VEC4
-
-	//other useful drawing constants:
-	const float wall_radius = 0.05f;
-	const float shadow_offset = 0.07f;
-	const float padding = 0.14f; //padding between outside of walls and edge of window
 
 	//---- compute vertices to draw ----
 
@@ -290,106 +192,74 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 		vertices.emplace_back(glm::vec3(center.x-radius.x, center.y+radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
 	};
 
-	//shadows for everything (except the trail):
+  auto draw_circle = [&vertices](glm::vec2 const &center, float &radius, glm::u8vec4 const &color) {
 
-	glm::vec2 s = glm::vec2(0.0f,-shadow_offset);
+    static const uint8_t sides = 16;
+    static const float x_offsets[sides+1] =
+      {-1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f,
+      0.0f,  0.38268343236f,  0.70710678118f,  0.92387953251f,
+      1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f,
+      0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f, -1.0f};
 
-	draw_rectangle(glm::vec2(-court_radius.x-wall_radius, 0.0f)+s, glm::vec2(wall_radius, court_radius.y + 2.0f * wall_radius), shadow_color);
-	draw_rectangle(glm::vec2( court_radius.x+wall_radius, 0.0f)+s, glm::vec2(wall_radius, court_radius.y + 2.0f * wall_radius), shadow_color);
-	draw_rectangle(glm::vec2( 0.0f,-court_radius.y-wall_radius)+s, glm::vec2(court_radius.x, wall_radius), shadow_color);
-	draw_rectangle(glm::vec2( 0.0f, court_radius.y+wall_radius)+s, glm::vec2(court_radius.x, wall_radius), shadow_color);
-	draw_rectangle(left_paddle+s, paddle_radius, shadow_color);
-	draw_rectangle(right_paddle+s, paddle_radius, shadow_color);
-	draw_rectangle(ball+s, ball_radius, shadow_color);
+    static const float y_offsets[sides+1] =
+      {0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f,
+      -1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f,
+       0.0f,  0.38268343236f,  0.70710678118f,  0.92387953251f,
+       1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f, 0.0f};
 
-	//ball's trail:
-	if (ball_trail.size() >= 2) {
-		//start ti at second element so there is always something before it to interpolate from:
-		std::deque< glm::vec3 >::iterator ti = ball_trail.begin() + 1;
-		//draw trail from oldest-to-newest:
-		for (uint32_t i = uint32_t(rainbow_colors.size())-1; i < rainbow_colors.size(); --i) {
-			//time at which to draw the trail element:
-			float t = (i + 1) / float(rainbow_colors.size()) * trail_length;
-			//advance ti until 'just before' t:
-			while (ti != ball_trail.end() && ti->z > t) ++ti;
-			//if we ran out of tail, stop drawing:
-			if (ti == ball_trail.end()) break;
-			//interpolate between previous and current trail point to the correct time:
-			glm::vec3 a = *(ti-1);
-			glm::vec3 b = *(ti);
-			glm::vec2 at = (t - a.z) / (b.z - a.z) * (glm::vec2(b) - glm::vec2(a)) + glm::vec2(a);
-			//draw:
-			draw_rectangle(at, ball_radius, rainbow_colors[i]);
-		}
-	}
+    //just draw a <sides>-gon with CCW-oriented triangles:
+    for (uint8_t i = 0; i < sides; i++) {
+      vertices.emplace_back(glm::vec3(center.x+x_offsets[i]*radius, center.y+y_offsets[i]*radius, 0.0f), color, glm::vec2(0.5f, 0.5f));
+      vertices.emplace_back(glm::vec3(center.x+x_offsets[i+1]*radius, center.y+y_offsets[i+1]*radius, 0.0f), color, glm::vec2(0.5f, 0.5f));
+      vertices.emplace_back(glm::vec3(center.x, center.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+    }
 
-	//solid objects:
+  };
 
-	//walls:
-	draw_rectangle(glm::vec2(-court_radius.x-wall_radius, 0.0f), glm::vec2(wall_radius, court_radius.y + 2.0f * wall_radius), fg_color);
-	draw_rectangle(glm::vec2( court_radius.x+wall_radius, 0.0f), glm::vec2(wall_radius, court_radius.y + 2.0f * wall_radius), fg_color);
-	draw_rectangle(glm::vec2( 0.0f,-court_radius.y-wall_radius), glm::vec2(court_radius.x, wall_radius), fg_color);
-	draw_rectangle(glm::vec2( 0.0f, court_radius.y+wall_radius), glm::vec2(court_radius.x, wall_radius), fg_color);
+  { // ---- draw snake ----
+    draw_circle(snake_pos, snake_radius, rainbow_colors[0]);
 
-	//paddles:
-	draw_rectangle(left_paddle, paddle_radius, fg_color);
-	draw_rectangle(right_paddle, paddle_radius, fg_color);
-
-
-	//ball:
-	draw_rectangle(ball, ball_radius, fg_color);
-
-	//scores:
-	glm::vec2 score_radius = glm::vec2(0.1f, 0.1f);
-	for (uint32_t i = 0; i < left_score; ++i) {
-		draw_rectangle(glm::vec2( -court_radius.x + (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
-	}
-	for (uint32_t i = 0; i < right_score; ++i) {
-		draw_rectangle(glm::vec2( court_radius.x - (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
-	}
-
-
+    uint32_t color_index = 1;
+    for (glm::vec3 b : snake_body) {
+      draw_circle(glm::vec2(b.x, b.y), snake_radius, rainbow_colors[color_index]);
+      color_index++;
+      if (color_index >= rainbow_colors.size()) color_index = 0;
+    }
+  }
 
 	//------ compute court-to-window transform ------
+  //compute area that should be visible:
+  glm::vec2 scene_min = arena_pos - arena_radius;
+  glm::vec2 scene_max = arena_pos + arena_radius;
 
-	//compute area that should be visible:
-	glm::vec2 scene_min = glm::vec2(
-		-court_radius.x - 2.0f * wall_radius - padding,
-		-court_radius.y - 2.0f * wall_radius - padding
-	);
-	glm::vec2 scene_max = glm::vec2(
-		court_radius.x + 2.0f * wall_radius + padding,
-		court_radius.y + 2.0f * wall_radius + 3.0f * score_radius.y + padding
-	);
+  //compute window aspect ratio:
+  float aspect = drawable_size.x / float(drawable_size.y);
+  //we'll scale the x coordinate by 1.0 / aspect to make sure things stay square.
 
-	//compute window aspect ratio:
-	float aspect = drawable_size.x / float(drawable_size.y);
-	//we'll scale the x coordinate by 1.0 / aspect to make sure things stay square.
+  //compute scale factor for court given that...
+  float scale = std::min(
+    (2.0f * aspect) / (scene_max.x - scene_min.x), //... x must fit in [-aspect,aspect] ...
+    (2.0f) / (scene_max.y - scene_min.y) //... y must fit in [-1,1].
+  );
 
-	//compute scale factor for court given that...
-	float scale = std::min(
-		(2.0f * aspect) / (scene_max.x - scene_min.x), //... x must fit in [-aspect,aspect] ...
-		(2.0f) / (scene_max.y - scene_min.y) //... y must fit in [-1,1].
-	);
+  glm::vec2 center = 0.5f * (scene_max + scene_min);
 
-	glm::vec2 center = 0.5f * (scene_max + scene_min);
+  //build matrix that scales and translates appropriately:
+  glm::mat4 arena_to_clip = glm::mat4(
+    glm::vec4(scale / aspect, 0.0f, 0.0f, 0.0f),
+    glm::vec4(0.0f, scale, 0.0f, 0.0f),
+    glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+    glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
+  );
+  //NOTE: glm matrices are specified in *Column-Major* order,
+  // so this matrix is actually transposed from how it appears.
 
-	//build matrix that scales and translates appropriately:
-	glm::mat4 court_to_clip = glm::mat4(
-		glm::vec4(scale / aspect, 0.0f, 0.0f, 0.0f),
-		glm::vec4(0.0f, scale, 0.0f, 0.0f),
-		glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
-		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
-	);
-	//NOTE: glm matrices are specified in *Column-Major* order,
-	// so this matrix is actually transposed from how it appears.
-
-	//also build the matrix that takes clip coordinates to court coordinates (used for mouse handling):
-	clip_to_court = glm::mat3x2(
-		glm::vec2(aspect / scale, 0.0f),
-		glm::vec2(0.0f, 1.0f / scale),
-		glm::vec2(center.x, center.y)
-	);
+  //also build the matrix that takes clip coordinates to court coordinates (used for mouse handling):
+  clip_to_arena = glm::mat3x2(
+    glm::vec2(aspect / scale, 0.0f),
+    glm::vec2(0.0f, 1.0f / scale),
+    glm::vec2(center.x, center.y)
+  );
 
 	//---- actual drawing ----
 
@@ -412,7 +282,7 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 	glUseProgram(color_texture_program.program);
 
 	//upload OBJECT_TO_CLIP to the proper uniform location:
-	glUniformMatrix4fv(color_texture_program.OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(court_to_clip));
+	glUniformMatrix4fv(color_texture_program.OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(arena_to_clip));
 
 	//use the mapping vertex_buffer_for_color_texture_program to fetch vertex data:
 	glBindVertexArray(vertex_buffer_for_color_texture_program);

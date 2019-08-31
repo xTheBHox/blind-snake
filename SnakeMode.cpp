@@ -28,7 +28,7 @@ SnakeMode::SnakeMode() {
 		//set vertex_buffer as the source of glVertexAttribPointer() commands:
 		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
 
-		//set up the vertex array object to describe arrays of PongMode::Vertex:
+		//set up the vertex array object to describe arrays of SnakeMode::Vertex:
 		glVertexAttribPointer(
 			color_texture_program.Position_vec4, //attribute
 			3, //size
@@ -148,9 +148,9 @@ void SnakeMode::update(float elapsed) {
   }
 
   if (!snake_body.empty() && snake_body.back().z > snake_body_interval) {
-    float scale_front = snake_body.back().z - snake_body_interval;
-    float scale_back = elapsed - scale_front;
-    snake_body.emplace_back(glm::vec3(snake_pos * scale_back + snake_pos_prev * scale_front, scale_front));
+    float scale_front = (snake_body.back().z - snake_body_interval) / elapsed;
+    float scale_back = 1.0f - scale_front;
+    snake_body.emplace_back(snake_pos * scale_back + snake_pos_prev * scale_front, scale_front);
   }
 
   while (!snake_body.empty() && snake_body.front().z > snake_len) {
@@ -191,10 +191,10 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
       0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f, 0.0f};
 
     static const float y_offsets[sides+1] =
-      {0.0f,  0.38268343236f,  0.70710678118f,  0.92387953251f,
-      -1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f,
-       0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f,
-       1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f, 0.0f};
+      {0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f,
+       1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f,
+       0.0f,  0.38268343236f,  0.70710678118f,  0.92387953251f,
+      -1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f, 0.0f,};
 
     //just draw a <sides>-gon with CCW-oriented triangles:
     for (uint8_t i = 0; i < sides; i++) {
@@ -209,7 +209,7 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
     draw_circle(snake_pos, snake_radius, rainbow_colors[0]);
 
     uint32_t color_index = 1;
-    for (glm::vec3 b : snake_body) {
+    for (glm::vec3 &b : snake_body) {
       draw_circle(glm::vec2(b.x, b.y), snake_radius, rainbow_colors[color_index]);
       color_index++;
       if (color_index >= rainbow_colors.size()) color_index = 0;
