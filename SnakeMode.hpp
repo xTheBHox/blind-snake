@@ -7,6 +7,10 @@
 #include <vector>
 #include <deque>
 
+/*
+ * SnakeMode is a game mode that implements a single-player game of Snake.
+ */
+
 struct SnakeMode : Mode {
 	SnakeMode();
 	virtual ~SnakeMode();
@@ -16,13 +20,13 @@ struct SnakeMode : Mode {
 	virtual void update(float elapsed) override;
 	virtual void draw(glm::uvec2 const &drawable_size) override;
 
-  // ---- game state ----
+	//----- game state -----
 
   glm::vec2 snake_pos = glm::vec2(0.0f, 0.0f);
   glm::vec2 snake_vel = glm::vec2(1.0f, 0.0f);
 
-  float snake_speed = 1.0f;
-  float snake_radius = 1.0f;
+  float snake_speed = 2.0f;
+  float snake_radius = 0.2f;
 
   uint16_t snake_len = 15;
 
@@ -38,9 +42,10 @@ struct SnakeMode : Mode {
 
   glm::vec2 arena_pos = glm::vec2(0.0f, 0.0f);
 
-  // ---- opengl ----
+	//----- opengl assets / helpers ------
 
-  struct Vertex {
+	//draw functions will work on vectors of vertices, defined as follows:
+	struct Vertex {
 		Vertex(glm::vec3 const &Position_, glm::u8vec4 const &Color_, glm::vec2 const &TexCoord_) :
 			Position(Position_), Color(Color_), TexCoord(TexCoord_) { }
 		glm::vec3 Position;
@@ -49,7 +54,7 @@ struct SnakeMode : Mode {
 	};
 	static_assert(sizeof(Vertex) == 4*3 + 1*4 + 4*2, "SnakeMode::Vertex should be packed");
 
-  //Shader program that draws transformed, vertices tinted with vertex colors:
+	//Shader program that draws transformed, vertices tinted with vertex colors:
 	ColorTextureProgram color_texture_program;
 
 	//Buffer used to hold vertex data during drawing:
@@ -61,9 +66,9 @@ struct SnakeMode : Mode {
 	//Solid white texture:
 	GLuint white_tex = 0;
 
-  //matrix that maps from clip coordinates to court-space coordinates:
+	//matrix that maps from clip coordinates to court-space coordinates:
 	glm::mat3x2 clip_to_arena = glm::mat3x2(1.0f);
 	// computed in draw() as the inverse of OBJECT_TO_CLIP
 	// (stored here so that the mouse handling code can use it to position the paddle)
 
-}
+};

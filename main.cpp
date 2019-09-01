@@ -2,7 +2,7 @@
 #include "Mode.hpp"
 
 //The 'GameMode' mode plays the game:
-#include "PongMode.hpp"
+#include "SnakeMode.hpp"
 
 //GL.hpp will include a non-namespace-polluting set of opengl prototypes:
 #include "GL.hpp"

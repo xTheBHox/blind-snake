@@ -6,11 +6,13 @@
 //for glm::value_ptr() :
 #include <glm/gtc/type_ptr.hpp>
 
+#include <random>
+
 SnakeMode::SnakeMode() {
 
   snake_body.emplace_back(snake_pos, 0.0f);
 
-  //----- allocate OpenGL resources -----
+	//----- allocate OpenGL resources -----
 	{ //vertex buffer:
 		glGenBuffers(1, &vertex_buffer);
 		//for now, buffer will be un-filled.
@@ -96,7 +98,6 @@ SnakeMode::SnakeMode() {
 
 		GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
 	}
-
 }
 
 SnakeMode::~SnakeMode() {
@@ -110,7 +111,6 @@ SnakeMode::~SnakeMode() {
 
 	glDeleteTextures(1, &white_tex);
 	white_tex = 0;
-
 }
 
 bool SnakeMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
@@ -132,12 +132,9 @@ bool SnakeMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size
   }
 
   return false;
-
 }
 
 void SnakeMode::update(float elapsed) {
-
-  // ---- snake move ----
 
   snake_pos_prev = snake_pos;
 
@@ -148,23 +145,24 @@ void SnakeMode::update(float elapsed) {
   }
 
   if (!snake_body.empty() && snake_body.back().z > snake_body_interval) {
-    float scale_front = (snake_body.back().z - snake_body_interval) / elapsed;
+    float dt = snake_body.back().z - snake_body_interval;
+    float scale_front = dt / elapsed;
     float scale_back = 1.0f - scale_front;
-    snake_body.emplace_back(snake_pos * scale_back + snake_pos_prev * scale_front, scale_front);
+    snake_body.emplace_back(snake_pos * scale_back + snake_pos_prev * scale_front, dt);
   }
 
-  while (!snake_body.empty() && snake_body.front().z > snake_len) {
+  while (snake_body.size() > snake_len) {
     snake_body.pop_front();
   }
 
 }
 
 void SnakeMode::draw(glm::uvec2 const &drawable_size) {
-
 	//some nice colors from the course web page:
 	#define HEX_TO_U8VEC4( HX ) (glm::u8vec4( (HX >> 24) & 0xff, (HX >> 16) & 0xff, (HX >> 8) & 0xff, (HX) & 0xff ))
 	const glm::u8vec4 bg_color = HEX_TO_U8VEC4(0xf3ffc6ff);
 	const glm::u8vec4 fg_color = HEX_TO_U8VEC4(0x000000ff);
+	const glm::u8vec4 shadow_color = HEX_TO_U8VEC4(0xa5df40ff);
 	const std::vector< glm::u8vec4 > rainbow_colors = {
 		HEX_TO_U8VEC4(0xe2ff70ff), HEX_TO_U8VEC4(0xcbff70ff), HEX_TO_U8VEC4(0xaeff5dff),
 		HEX_TO_U8VEC4(0x88ff52ff), HEX_TO_U8VEC4(0x6cff47ff), HEX_TO_U8VEC4(0x3aff37ff),
@@ -177,10 +175,23 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
 	};
 	#undef HEX_TO_U8VEC4
 
-  //vertices will be accumulated into this list and then uploaded+drawn at the end of this function:
-  std::vector< Vertex > vertices;
+	//---- compute vertices to draw ----
 
-  //inline helper function for circle drawing:
+	//vertices will be accumulated into this list and then uploaded+drawn at the end of this function:
+	std::vector< Vertex > vertices;
+
+	//inline helper function for rectangle drawing:
+	auto draw_rectangle = [&vertices](glm::vec2 const &center, glm::vec2 const &radius, glm::u8vec4 const &color) {
+		//split rectangle into two CCW-oriented triangles:
+		vertices.emplace_back(glm::vec3(center.x-radius.x, center.y-radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(center.x+radius.x, center.y-radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(center.x+radius.x, center.y+radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+
+		vertices.emplace_back(glm::vec3(center.x-radius.x, center.y-radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(center.x+radius.x, center.y+radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(center.x-radius.x, center.y+radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	};
+
   auto draw_circle = [&vertices](glm::vec2 const &center, float &radius, glm::u8vec4 const &color) {
 
     static const uint8_t sides = 16;
@@ -188,13 +199,13 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
       {-1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f,
       0.0f,  0.38268343236f,  0.70710678118f,  0.92387953251f,
       1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f,
-      0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f, 0.0f};
+      0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f, -1.0f};
 
     static const float y_offsets[sides+1] =
       {0.0f, -0.38268343236f, -0.70710678118f, -0.92387953251f,
-       1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f,
+      -1.0f, -0.92387953251f, -0.70710678118f, -0.38268343236f,
        0.0f,  0.38268343236f,  0.70710678118f,  0.92387953251f,
-      -1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f, 0.0f,};
+       1.0f,  0.92387953251f,  0.70710678118f,  0.38268343236f, 0.0f};
 
     //just draw a <sides>-gon with CCW-oriented triangles:
     for (uint8_t i = 0; i < sides; i++) {
@@ -209,91 +220,90 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
     draw_circle(snake_pos, snake_radius, rainbow_colors[0]);
 
     uint32_t color_index = 1;
-    for (glm::vec3 &b : snake_body) {
+    for (glm::vec3 b : snake_body) {
       draw_circle(glm::vec2(b.x, b.y), snake_radius, rainbow_colors[color_index]);
       color_index++;
       if (color_index >= rainbow_colors.size()) color_index = 0;
     }
   }
 
-  //------ compute court-to-window transform ------
+	//------ compute court-to-window transform ------
+  //compute area that should be visible:
+  glm::vec2 scene_min = arena_pos - arena_radius;
+  glm::vec2 scene_max = arena_pos + arena_radius;
 
-	//compute area that should be visible:
-	glm::vec2 scene_min = arena_pos - arena_radius;
-	glm::vec2 scene_max = arena_pos + arena_radius;
+  //compute window aspect ratio:
+  float aspect = drawable_size.x / float(drawable_size.y);
+  //we'll scale the x coordinate by 1.0 / aspect to make sure things stay square.
 
-	//compute window aspect ratio:
-	float aspect = drawable_size.x / float(drawable_size.y);
-	//we'll scale the x coordinate by 1.0 / aspect to make sure things stay square.
+  //compute scale factor for court given that...
+  float scale = std::min(
+    (2.0f * aspect) / (scene_max.x - scene_min.x), //... x must fit in [-aspect,aspect] ...
+    (2.0f) / (scene_max.y - scene_min.y) //... y must fit in [-1,1].
+  );
 
-	//compute scale factor for court given that...
-	float scale = std::min(
-		(2.0f * aspect) / (scene_max.x - scene_min.x), //... x must fit in [-aspect,aspect] ...
-		(2.0f) / (scene_max.y - scene_min.y) //... y must fit in [-1,1].
-	);
+  glm::vec2 center = 0.5f * (scene_max + scene_min);
 
-	glm::vec2 center = 0.5f * (scene_max + scene_min);
+  //build matrix that scales and translates appropriately:
+  glm::mat4 arena_to_clip = glm::mat4(
+    glm::vec4(scale / aspect, 0.0f, 0.0f, 0.0f),
+    glm::vec4(0.0f, scale, 0.0f, 0.0f),
+    glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+    glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
+  );
+  //NOTE: glm matrices are specified in *Column-Major* order,
+  // so this matrix is actually transposed from how it appears.
 
-	//build matrix that scales and translates appropriately:
-	glm::mat4 arena_to_clip = glm::mat4(
-		glm::vec4(scale / aspect, 0.0f, 0.0f, 0.0f),
-		glm::vec4(0.0f, scale, 0.0f, 0.0f),
-		glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
-		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
-	);
-	//NOTE: glm matrices are specified in *Column-Major* order,
-	// so this matrix is actually transposed from how it appears.
+  //also build the matrix that takes clip coordinates to court coordinates (used for mouse handling):
+  clip_to_arena = glm::mat3x2(
+    glm::vec2(aspect / scale, 0.0f),
+    glm::vec2(0.0f, 1.0f / scale),
+    glm::vec2(center.x, center.y)
+  );
 
-	//also build the matrix that takes clip coordinates to court coordinates (used for mouse handling):
-	clip_to_arena = glm::mat3x2(
-		glm::vec2(aspect / scale, 0.0f),
-		glm::vec2(0.0f, 1.0f / scale),
-		glm::vec2(center.x, center.y)
-	);
+	//---- actual drawing ----
 
-  //---- actual drawing ----
+	//clear the color buffer:
+	glClearColor(bg_color.r / 255.0f, bg_color.g / 255.0f, bg_color.b / 255.0f, bg_color.a / 255.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
 
-  //clear the color buffer:
-  glClearColor(bg_color.r / 255.0f, bg_color.g / 255.0f, bg_color.b / 255.0f, bg_color.a / 255.0f);
-  glClear(GL_COLOR_BUFFER_BIT);
+	//use alpha blending:
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	//don't use the depth test:
+	glDisable(GL_DEPTH_TEST);
 
-  //use alpha blending:
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  //don't use the depth test:
-  glDisable(GL_DEPTH_TEST);
+	//upload vertices to vertex_buffer:
+	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer); //set vertex_buffer as current
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STREAM_DRAW); //upload vertices array
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-  //upload vertices to vertex_buffer:
-  glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer); //set vertex_buffer as current
-  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STREAM_DRAW); //upload vertices array
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+	//set color_texture_program as current program:
+	glUseProgram(color_texture_program.program);
 
-  //set color_texture_program as current program:
-  glUseProgram(color_texture_program.program);
+	//upload OBJECT_TO_CLIP to the proper uniform location:
+	glUniformMatrix4fv(color_texture_program.OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(arena_to_clip));
 
-  //upload OBJECT_TO_CLIP to the proper uniform location:
-  glUniformMatrix4fv(color_texture_program.OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(arena_to_clip));
+	//use the mapping vertex_buffer_for_color_texture_program to fetch vertex data:
+	glBindVertexArray(vertex_buffer_for_color_texture_program);
 
-  //use the mapping vertex_buffer_for_color_texture_program to fetch vertex data:
-  glBindVertexArray(vertex_buffer_for_color_texture_program);
+	//bind the solid white texture to location zero:
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, white_tex);
 
-  //bind the solid white texture to location zero:
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, white_tex);
+	//run the OpenGL pipeline:
+	glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
 
-  //run the OpenGL pipeline:
-  glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
+	//unbind the solid white texture:
+	glBindTexture(GL_TEXTURE_2D, 0);
 
-  //unbind the solid white texture:
-  glBindTexture(GL_TEXTURE_2D, 0);
+	//reset vertex array to none:
+	glBindVertexArray(0);
 
-  //reset vertex array to none:
-  glBindVertexArray(0);
-
-  //reset current program to none:
-  glUseProgram(0);
+	//reset current program to none:
+	glUseProgram(0);
 
 
-  GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
+	GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
 
 }
