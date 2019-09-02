@@ -55,7 +55,7 @@ struct SnakeMode : Mode {
   float snake_r_min = 0.15f;
 
   struct Obstacle {
-    Obstacle(glm::vec2 &pos_, float r_, glm::vec2 &dest_) :
+    Obstacle(glm::vec2 const &pos_, float const &r_, glm::vec2 const &dest_) :
       pos(pos_), r(r_), dest(dest_) { }
     glm::vec2 pos;
     float r;
