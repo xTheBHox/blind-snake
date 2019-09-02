@@ -139,6 +139,9 @@ int main(int argc, char **argv) {
 					}
 					save_png(filename, glm::uvec2(w,h), data.data(), LowerLeftOrigin);
 				}
+        else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_SPACE) {
+          Mode::set_current(std::make_shared< SnakeMode >());
+        }
 			}
 			if (!Mode::current) break;
 		}

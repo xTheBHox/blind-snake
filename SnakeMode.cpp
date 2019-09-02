@@ -10,7 +10,15 @@
 
 SnakeMode::SnakeMode() {
 
-  mt.seed(0);
+  mt.seed(static_cast<unsigned int>( time(NULL) ));
+  arena_x_dist = std::uniform_real_distribution<float>(
+    arena_pos.x - arena_radius.x + wall_radius,
+    arena_pos.x + arena_radius.x - wall_radius
+  );
+  arena_y_dist = std::uniform_real_distribution<float>(
+    arena_pos.y - arena_radius.y + wall_radius,
+    arena_pos.y + arena_radius.y - wall_radius
+  );
 
   // generate exit and starting positions
   {
@@ -18,32 +26,35 @@ SnakeMode::SnakeMode() {
     uint32_t side = side_dist(mt);
     if (side == 0) {
       exit_pos.x = arena_pos.x - arena_radius.x;
-      std::uniform_real_distribution<float> pos_dist(arena_pos.y - arena_radius.y, arena_pos.y + arena_radius.y);
-      exit_pos.y = pos_dist(mt);
-      snake_pos.x = arena_pos.x + arena_radius.x - snake_start_margin.x;
+      exit_pos.y = arena_y_dist(mt);
+      snake_pos.x = arena_pos.x + arena_radius.x;
       snake_pos.y = 2.0f * arena_pos.y - exit_pos.y;
     }
     else if (side == 1) {
       exit_pos.x = arena_pos.x + arena_radius.x;
-      std::uniform_real_distribution<float> pos_dist(arena_pos.y - arena_radius.y, arena_pos.y + arena_radius.y);
-      exit_pos.y = pos_dist(mt);
-      snake_pos.x = arena_pos.x - arena_radius.x + snake_start_margin.x;
+      exit_pos.y = arena_y_dist(mt);
+      snake_pos.x = arena_pos.x - arena_radius.x;
       snake_pos.y = 2.0f * arena_pos.y - exit_pos.y;
     }
     else if (side == 2) {
-      std::uniform_real_distribution<float> pos_dist(arena_pos.x - arena_radius.x, arena_pos.x + arena_radius.x);
-      exit_pos.x = pos_dist(mt);
+      exit_pos.x = arena_x_dist(mt);
       exit_pos.y = arena_pos.y - arena_radius.y;
       snake_pos.x = 2.0f * arena_pos.x - exit_pos.x;
-      snake_pos.y = arena_pos.y + arena_radius.y - snake_start_margin.y;
+      snake_pos.y = arena_pos.y + arena_radius.y;
     }
     else if (side == 3) {
-      std::uniform_real_distribution<float> pos_dist(arena_pos.x - arena_radius.x, arena_pos.x + arena_radius.x);
-      exit_pos.x = pos_dist(mt);
+      exit_pos.x = arena_x_dist(mt);
       exit_pos.y = arena_pos.y + arena_radius.y;
       snake_pos.x = 2.0f * arena_pos.x - exit_pos.x;
-      snake_pos.y = arena_pos.y - arena_radius.y + snake_start_margin.y;
+      snake_pos.y = arena_pos.y - arena_radius.y;
     }
+
+    // clamp to certain buffer
+    snake_pos.x = std::max(snake_pos.x, arena_pos.x - arena_radius.x + snake_start_margin.x);
+    snake_pos.x = std::min(snake_pos.x, arena_pos.x + arena_radius.x - snake_start_margin.x);
+
+    snake_pos.y = std::max(snake_pos.y, arena_pos.y - arena_radius.y + snake_start_margin.y);
+    snake_pos.y = std::min(snake_pos.y, arena_pos.y + arena_radius.y - snake_start_margin.y);
 
   }
 
@@ -52,13 +63,11 @@ SnakeMode::SnakeMode() {
 
   // generate obstacles
   {
-    std::uniform_real_distribution<float> obs_x_dist(arena_pos.x - arena_radius.x, arena_pos.x + arena_radius.x);
-    std::uniform_real_distribution<float> obs_y_dist(arena_pos.y - arena_radius.y, arena_pos.y + arena_radius.y);
     std::uniform_real_distribution<float> obs_r_dist(obs_r_min, obs_r_max);
     for (uint32_t i = 0; i < obs_count_init; i++) {
 
-      float x = obs_x_dist(mt);
-      float y = obs_y_dist(mt);
+      float x = arena_x_dist(mt);
+      float y = arena_y_dist(mt);
       float r = obs_r_dist(mt);
       if (std::abs(snake_pos.x - x) < obs_buffer && std::abs(snake_pos.y - y) < obs_buffer) {
         continue;
@@ -66,7 +75,9 @@ SnakeMode::SnakeMode() {
       else if (std::abs(exit_pos.x - x) < obs_buffer && std::abs(exit_pos.y - y) < obs_buffer) {
         continue;
       }
-      obstacles.emplace_back(x, y, r);
+      float x1 = arena_x_dist(mt); // the target position
+      float y1 = arena_y_dist(mt);
+      obstacles.emplace_back(glm::vec2(x, y), r, glm::vec2(x1, y1));
     }
   }
 
@@ -228,7 +239,7 @@ void SnakeMode::update(float elapsed) {
   }
 
   auto isCirclesCollide = [](glm::vec2 const &c0, float const &r0, glm::vec2 const &c1, float const &r1) {
-    return ((c0.x - c1.x) * (c0.x - c1.x) + (c0.y - c1.y) * (c0.y - c1.y)) < (r0 * r0 + r1 * r1);
+    return (c0.x - c1.x) * (c0.x - c1.x) + (c0.y - c1.y) * (c0.y - c1.y) < 0.9f * (r0 + r1) * (r0 + r1);
   };
 
   // ---- snake v snake tail collision ----
@@ -241,8 +252,8 @@ void SnakeMode::update(float elapsed) {
 
   // ---- snake v obstacle collision ----
 
-  for (glm::vec3 &ob : obstacles) {
-    if (isCirclesCollide(snake_pos, snake_r, glm::vec2(ob.x, ob.y), ob.z)) {
+  for (struct Obstacle &ob : obstacles) {
+    if (isCirclesCollide(snake_pos, snake_r, ob.pos, ob.r)) {
       over = true;
     }
   }
@@ -261,8 +272,7 @@ void SnakeMode::update(float elapsed) {
     for (std::list<glm::vec3>::iterator i = foods.begin(); i != foods.end(); i++) {
       glm::vec3 &f = *i;
       if (isCirclesCollide(snake_pos, snake_r, glm::vec2(f.x, f.y), f.z)) {
-        snake_r += snake_r_step;
-        snake_body_interval = snake_r;
+        snake_r_actual += snake_r_food_step;
         snake_len += 1;
         foods.erase(i);
         break;
@@ -275,21 +285,13 @@ void SnakeMode::update(float elapsed) {
   food_counter += elapsed;
   if (food_counter > food_gen_rate) {
     food_counter -= food_gen_rate;
-    std::uniform_real_distribution<float> food_x_dist(
-      arena_pos.x - arena_radius.x + wall_radius,
-      arena_pos.x + arena_radius.x - wall_radius
-    );
-    std::uniform_real_distribution<float> food_y_dist(
-      arena_pos.y - arena_radius.y + wall_radius,
-      arena_pos.y + arena_radius.y - wall_radius
-    );
     bool done = false;
     while (!done) {
-      float x = food_x_dist(mt);
-      float y = food_y_dist(mt);
-      for (glm::vec3 ob : obstacles) {
+      float x = arena_x_dist(mt);
+      float y = arena_y_dist(mt);
+      for (struct Obstacle &ob : obstacles) {
         done = true;
-        if (isCirclesCollide(glm::vec2(x, y), food_r, glm::vec2(ob.x, ob.y), ob.z)) {
+        if (isCirclesCollide(glm::vec2(x, y), food_r, ob.pos, ob.r)) {
           done = false;
         }
       }
@@ -299,17 +301,41 @@ void SnakeMode::update(float elapsed) {
     }
   }
 
-  // ---- snake decay ----
-  if (snake_r > snake_r_min) {
-    snake_decay_counter += elapsed;
-    if (snake_decay_counter > snake_decay_rate) {
-      snake_decay_counter -= snake_decay_rate;
-      snake_r -= snake_decay_step;
+  // ---- snake growth/decay ----
+  if (std::abs(snake_r_actual - snake_r) > 0.5f * snake_r_lag_step) {
+    snake_r_lag_counter += elapsed;
+    if (snake_r_lag_counter > snake_r_lag_rate) {
+      snake_r_lag_counter -= snake_r_lag_rate;
+      if (snake_r_actual > snake_r) snake_r += snake_r_lag_step;
+      else snake_r -= snake_r_lag_step;
       snake_body_interval = snake_r;
     }
   }
+  if (snake_r_actual > snake_r_min) {
+    snake_decay_counter += elapsed;
+    if (snake_decay_counter > snake_decay_rate) {
+      snake_decay_counter -= snake_decay_rate;
+      snake_r_actual -= snake_decay_step;
+    }
+  }
 
+  // ---- obstacle movement ----
+  for (struct Obstacle &ob : obstacles) {
+    ob.mv_timer += elapsed;
+    if (ob.mv_timer > ob.r * obs_mv_rate_mod) {
+      ob.mv_timer -= ob.r;
+      glm::vec2 dir = ob.dest - ob.pos;
+      float dist_sq = dir.x * dir.x + dir.y * dir.y;
+      if (dist_sq < obs_mv_step_sq) {
+        ob.dest = glm::vec2(arena_x_dist(mt), arena_y_dist(mt));
+      }
+      else {
+        float scaling = obs_mv_step_sq / std::sqrt(dist_sq);
+        ob.pos += dir * scaling;
+      }
+    }
 
+  }
 }
 
 void SnakeMode::draw(glm::uvec2 const &drawable_size) {
@@ -319,9 +345,13 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
 	const glm::u8vec4 fg_color = HEX_TO_U8VEC4(0x000040ff);
 	const glm::u8vec4 wall_color = HEX_TO_U8VEC4(0x602020ff);
 	const glm::u8vec4 food_color = HEX_TO_U8VEC4(0xff4040ff);
-	const glm::u8vec4 obstacle_color = HEX_TO_U8VEC4(0x804040ff);
-	const glm::u8vec4 white_color = HEX_TO_U8VEC4(0xffffffff);
-	const glm::u8vec4 shadow_color = HEX_TO_U8VEC4(0xa5df40ff);
+	// const glm::u8vec4 obstacle_color = HEX_TO_U8VEC4(0x804040ff);
+	// const glm::u8vec4 white_color = HEX_TO_U8VEC4(0xffffffff);
+	// const glm::u8vec4 shadow_color = HEX_TO_U8VEC4(0xa5df40ff);
+  const std::vector< glm::u8vec4 > obstacle_colors = {
+    HEX_TO_U8VEC4(0x804040ff), HEX_TO_U8VEC4(0x705820ff), HEX_TO_U8VEC4(0x606050ff),
+    HEX_TO_U8VEC4(0x407050ff), HEX_TO_U8VEC4(0x308040ff), HEX_TO_U8VEC4(0x509000ff)
+  };
 	const std::vector< glm::u8vec4 > rainbow_colors = {
 		HEX_TO_U8VEC4(0xe2ff70ff), HEX_TO_U8VEC4(0xcbff70ff), HEX_TO_U8VEC4(0xaeff5dff),
 		HEX_TO_U8VEC4(0x88ff52ff), HEX_TO_U8VEC4(0x6cff47ff), HEX_TO_U8VEC4(0x3aff37ff),
@@ -382,7 +412,6 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
 
   };
 
-
   { // ---- draw walls ----
     draw_rectangle(glm::vec2(arena_pos.x - arena_radius.x, arena_pos.y), glm::vec2(wall_radius, arena_radius.y), wall_color);
     draw_rectangle(glm::vec2(arena_pos.x + arena_radius.x, arena_pos.y), glm::vec2(wall_radius, arena_radius.y), wall_color);
@@ -406,8 +435,8 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
     draw_circle(snake_pos, snake_r, fg_color);
 
     // snake eyes
-    //float eye_scale = snake_r / snake_speed;
-    //draw_circle(snake_pos);
+    // float eye_scale = snake_r / snake_speed;
+    // draw_circle(snake_pos);
 
   }
 
@@ -418,8 +447,11 @@ void SnakeMode::draw(glm::uvec2 const &drawable_size) {
   }
 
   { // ---- draw obstacles ----
-    for (glm::vec3 ob : obstacles) {
-      draw_circle(glm::vec2(ob.x, ob.y), ob.z, obstacle_color);
+    uint32_t i = 0;
+    for (struct Obstacle &ob : obstacles) {
+      draw_circle(ob.pos, ob.r, obstacle_colors[i]);
+      i++;
+      if (i >= obstacle_colors.size()) i = 0;
     }
   }
 
